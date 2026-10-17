@@ -48,8 +48,11 @@ class Settings(BaseSettings):
     AGENT_MAX_COST_USD_PER_RUN: float = 2.00
 
     # AI / LLM Providers
-    LLM_PROVIDER: str = "mock"  # mock, openai, anthropic
-    LLM_MODEL: str = "gpt-4o-mini"
+    LLM_PROVIDER: str = "ollama"  # ollama, openai, mock
+    LLM_MODEL: str = "mistral:latest"
+    OLLAMA_BASE_URL: str = "http://localhost:11434"
+    OLLAMA_MODEL: str = "mistral:latest"
+    OLLAMA_TIMEOUT_SECONDS: float = 180.0
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
 

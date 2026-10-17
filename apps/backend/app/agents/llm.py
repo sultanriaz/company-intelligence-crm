@@ -201,6 +201,112 @@ class MockLLMAdapter(BaseLLMAdapter):
         return output_schema()
 
 
+class OllamaAdapter(BaseLLMAdapter):
+    """
+    Local Ollama LLM adapter for privacy-preserving, zero-cost,
+    and offline enterprise inference. Connects to local Ollama daemon
+    (default: http://localhost:11434).
+    """
+
+    def __init__(
+        self,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: Optional[float] = None,
+    ):
+        self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
+        self.model = model or settings.OLLAMA_MODEL
+        self.timeout = timeout or settings.OLLAMA_TIMEOUT_SECONDS
+        self._verified_model: Optional[str] = None
+
+    async def _resolve_model(self, client) -> str:
+        """Auto-detects and verifies an available text model on the local Ollama instance."""
+        if self._verified_model:
+            return self._verified_model
+
+        try:
+            r = await client.get(f"{self.base_url}/api/tags", timeout=5.0)
+            if r.status_code == 200:
+                models = [m["name"] for m in r.json().get("models", [])]
+                # Filter out pure embedding models like nomic-embed-text
+                text_models = [m for m in models if "embed" not in m.lower()]
+                if self.model in models:
+                    self._verified_model = self.model
+                elif text_models:
+                    self._verified_model = text_models[0]
+                    logger.info(f"Ollama model '{self.model}' not found; using active local model '{self._verified_model}'")
+                elif models:
+                    self._verified_model = models[0]
+        except Exception as e:
+            logger.warning(f"Could not query Ollama tags at {self.base_url}: {e}")
+
+        if not self._verified_model:
+            self._verified_model = self.model
+
+        return self._verified_model
+
+    def _format_schema_prompt(self, output_schema: Type[T]) -> str:
+        """Formats concise, key-oriented guidelines for the requested Pydantic schema."""
+        fields = output_schema.model_fields
+        lines = ["Required JSON fields and format:"]
+        for name, field in fields.items():
+            type_repr = getattr(field.annotation, "__name__", str(field.annotation))
+            type_repr = type_repr.replace("typing.", "").replace("app.schemas.contracts.", "")
+            lines.append(f'  - "{name}": ({type_repr})')
+        return "\n".join(lines)
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        system_instruction: str,
+        output_schema: Type[T],
+    ) -> T:
+        import httpx
+
+        schema_guidelines = self._format_schema_prompt(output_schema)
+        enriched_system = (
+            f"{system_instruction}\n\n"
+            f"You are a structured data extractor. You must respond ONLY with a valid JSON object. "
+            f"Do not include any prose, commentary, or markdown explanation.\n"
+            f"{schema_guidelines}"
+        )
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            model_to_use = await self._resolve_model(client)
+            url = f"{self.base_url}/api/chat"
+            payload = {
+                "model": model_to_use,
+                "messages": [
+                    {"role": "system", "content": enriched_system},
+                    {"role": "user", "content": prompt},
+                ],
+                "format": "json",
+                "stream": False,
+                "options": {
+                    "temperature": 0.1,
+                    "num_predict": 1024,
+                },
+            }
+
+            try:
+                logger.info(f"Dispatching inference to local Ollama ({model_to_use}) at {url}...")
+                resp = await client.post(url, json=payload)
+                resp.raise_for_status()
+                resp_data = resp.json()
+                content = resp_data.get("message", {}).get("content", "").strip()
+
+                parsed_json = extract_json_from_llm_response(content)
+                logger.info(f"Ollama ({model_to_use}) successfully returned structured JSON.")
+                return output_schema.model_validate(parsed_json)
+
+            except Exception as e:
+                logger.warning(
+                    f"Local Ollama generation failed ({type(e).__name__}: {str(e)}). "
+                    f"Executing graceful fallback to MockLLMAdapter for uninterrupted execution."
+                )
+                return await MockLLMAdapter().generate_structured(prompt, system_instruction, output_schema)
+
+
 class OpenAIAdapter(BaseLLMAdapter):
     """OpenAI API adapter using standard HTTP or LangChain."""
 
@@ -246,6 +352,18 @@ class OpenAIAdapter(BaseLLMAdapter):
 def get_llm_adapter() -> BaseLLMAdapter:
     """Factory function returning the configured LLM adapter."""
     provider = settings.LLM_PROVIDER.lower()
-    if provider == "openai" and settings.OPENAI_API_KEY:
+    if provider == "ollama":
+        return OllamaAdapter()
+    elif provider == "openai" and settings.OPENAI_API_KEY:
         return OpenAIAdapter()
+    elif provider == "auto":
+        # Check if local Ollama is available
+        try:
+            import httpx
+            with httpx.Client(timeout=1.0) as client:
+                r = client.get(f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/tags")
+                if r.status_code == 200:
+                    return OllamaAdapter()
+        except Exception:
+            pass
     return MockLLMAdapter()

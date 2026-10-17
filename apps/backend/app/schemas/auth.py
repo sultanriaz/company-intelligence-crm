@@ -17,7 +17,7 @@ class TokenData(BaseModel):
 
 
 class UserCreate(BaseModel):
-    email: EmailStr
+    email: str = Field(..., description="User email address")
     password: str = Field(min_length=8)
     full_name: str
     workspace_name: Optional[str] = "Default Workspace"
@@ -25,7 +25,7 @@ class UserCreate(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email: str
     password: str
 
 

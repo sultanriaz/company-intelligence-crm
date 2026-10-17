@@ -26,16 +26,32 @@ async def seed():
         session.add(workspace)
         await session.flush()
 
-        # 2. Create Admin User
+        # 2. Create Users
         admin_user = User(
             workspace_id=workspace.id,
-            email="admin@company-intelligence.local",
-            password_hash=get_password_hash("AdminPass123!"),
+            email="admin@acme.local",
+            password_hash=get_password_hash("AdminPassword123!"),
             full_name="Sarah Connor",
             role="ADMIN",
             is_active=True,
         )
-        session.add(admin_user)
+        sales_user = User(
+            workspace_id=workspace.id,
+            email="sales@acme.local",
+            password_hash=get_password_hash("SalesPassword123!"),
+            full_name="Alex Mercer",
+            role="MEMBER",
+            is_active=True,
+        )
+        legacy_admin = User(
+            workspace_id=workspace.id,
+            email="admin@company-intelligence.local",
+            password_hash=get_password_hash("AdminPass123!"),
+            full_name="Lead Admin",
+            role="ADMIN",
+            is_active=True,
+        )
+        session.add_all([admin_user, sales_user, legacy_admin])
         await session.flush()
 
         # 3. Pipeline
