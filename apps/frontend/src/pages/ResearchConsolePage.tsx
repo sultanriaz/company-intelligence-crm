@@ -15,6 +15,9 @@ export const ResearchConsolePage: React.FC<ResearchConsoleProps> = ({ onSelectCo
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<any | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [activeStepId, setActiveStepId] = useState<string>("VALIDATING");
+  const [completedStepIds, setCompletedStepIds] = useState<string[]>([]);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const workflowSteps = [
     { id: "VALIDATING", label: "Target Validation & SSRF Check" },
@@ -35,13 +38,39 @@ export const ResearchConsolePage: React.FC<ResearchConsoleProps> = ({ onSelectCo
     setRunning(true);
     setError(null);
     setResult(null);
+    setActiveStepId("VALIDATING");
+    setCompletedStepIds([]);
+    setElapsedSeconds(0);
+
+    const timer = setInterval(() => {
+      setElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+
+    const poller = setInterval(async () => {
+      try {
+        const runs = await api.getResearchRuns(1, 1);
+        if (runs.items && runs.items.length > 0) {
+          const latest = runs.items[0];
+          if (latest.status) {
+            setActiveStepId(latest.status);
+          }
+          if (latest.checkpoints) {
+            setCompletedStepIds(latest.checkpoints.map((c: any) => c.state));
+          }
+        }
+      } catch {}
+    }, 1200);
 
     try {
       const res = await api.startResearchRun(targetUrl.trim(), crawlDepth, maxPages, includeEmail);
       setResult(res);
+      setActiveStepId("COMPLETED");
+      setCompletedStepIds(workflowSteps.map((s) => s.id));
     } catch (err: any) {
       setError(err.message || "Execution error");
     } finally {
+      clearInterval(timer);
+      clearInterval(poller);
       setRunning(false);
     }
   };
@@ -162,24 +191,63 @@ export const ResearchConsolePage: React.FC<ResearchConsoleProps> = ({ onSelectCo
       {running && (
         <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 space-y-4">
           <div className="flex items-center justify-between">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Agent State Machine In-Flight
-            </h3>
-            <span className="flex items-center gap-1.5 text-xs text-indigo-400 font-mono">
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-300">
+                Agent State Machine In-Flight
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Multi-agent orchestration in progress ({elapsedSeconds}s elapsed)
+              </p>
+            </div>
+            <span className="flex items-center gap-1.5 text-xs text-indigo-400 font-mono bg-indigo-500/10 border border-indigo-500/20 px-2.5 py-1 rounded-full">
               <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>Coordinating...</span>
+              <span>{activeStepId}...</span>
             </span>
           </div>
 
-          <div className="space-y-2">
-            {workflowSteps.map((s, idx) => (
-              <div key={s.id} className="flex items-center gap-3 text-xs py-1.5 border-b border-slate-800/40">
-                <span className="w-5 h-5 rounded-full bg-slate-800 flex items-center justify-center text-[10px] text-slate-400 font-mono">
-                  {idx + 1}
-                </span>
-                <span className="text-slate-300">{s.label}</span>
-              </div>
-            ))}
+          <div className="space-y-1.5">
+            {workflowSteps.map((s, idx) => {
+              const isCompleted = completedStepIds.includes(s.id) || (result && result.status === "COMPLETED");
+              const isCurrent = activeStepId === s.id && !isCompleted;
+              return (
+                <div
+                  key={s.id}
+                  className={`flex items-center justify-between text-xs py-2 px-3 rounded-lg border transition-all ${
+                    isCurrent
+                      ? "bg-indigo-950/40 border-indigo-500/40 text-indigo-200 shadow-sm"
+                      : isCompleted
+                      ? "bg-slate-950/40 border-emerald-500/20 text-slate-300"
+                      : "border-transparent text-slate-500"
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-mono font-bold ${
+                        isCompleted
+                          ? "bg-emerald-500/20 text-emerald-400"
+                          : isCurrent
+                          ? "bg-indigo-600 text-white animate-pulse"
+                          : "bg-slate-800 text-slate-500"
+                      }`}
+                    >
+                      {isCompleted ? <CheckCircle2 className="w-3.5 h-3.5" /> : idx + 1}
+                    </span>
+                    <span className={isCurrent ? "font-semibold text-white" : isCompleted ? "text-slate-200" : ""}>
+                      {s.label}
+                    </span>
+                  </div>
+                  {isCurrent && (
+                    <span className="flex items-center gap-1 text-[11px] text-indigo-400 font-mono">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>In-Flight</span>
+                    </span>
+                  )}
+                  {isCompleted && (
+                    <span className="text-[10px] text-emerald-400 font-mono font-medium">Done</span>
+                  )}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}

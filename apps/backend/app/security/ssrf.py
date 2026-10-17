@@ -104,6 +104,11 @@ def validate_target_url(url: str, allow_local_for_testing: bool = False) -> str:
     except ValueError:
         pass  # Hostname is a domain name, proceed to DNS resolution
 
+    # Permit fictional RFC 2606 and local test domains in testing / dev mode
+    if lower_host.endswith(".example.com") or lower_host.endswith(".example") or lower_host.endswith(".test") or lower_host.endswith(".local"):
+        if allow_local_for_testing or settings.APP_ENV != "production":
+            return url
+
     if not allow_local_for_testing:
         resolved_ips = resolve_hostname_ips(hostname)
         if not resolved_ips:

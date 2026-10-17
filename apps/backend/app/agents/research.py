@@ -21,10 +21,12 @@ class CompanyResearchAgent(BaseAgent):
         scraped_pages: List[ScrapedPage],
     ) -> CompanyProfile:
         combined_text_blocks = []
-        for p in scraped_pages[:10]:
-            clean_snippet = p.clean_text[:4000]
-            block = f"--- Source URL: {p.url} ---\n{clean_snippet}"
-            combined_text_blocks.append(block)
+        for idx, p in enumerate(scraped_pages[:4]):
+            limit = 1200 if idx == 0 else 800
+            clean_snippet = p.clean_text[:limit].strip()
+            if clean_snippet:
+                block = f"--- Source URL: {p.url} ---\n{clean_snippet}"
+                combined_text_blocks.append(block)
 
         raw_corpus = "\n\n".join(combined_text_blocks)
         guarded_corpus = wrap_untrusted_content_defensively(raw_corpus, label="SCRAPED_COMPANY_DATA")

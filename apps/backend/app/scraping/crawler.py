@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, List, Set, Tuple
+from typing import Dict, List, Optional, Set, Tuple
 from urllib.parse import urlparse
 
 from app.core.logging import logger
@@ -17,6 +17,10 @@ class SiteCrawler:
 
     def __init__(self, user_agent: str = "CompanyIntelligenceBot"):
         self.user_agent = user_agent
+        self.page_cache: Dict[str, ScrapedPage] = {}
+
+    def get_cached_page(self, url: str) -> Optional[ScrapedPage]:
+        return self.page_cache.get(url.rstrip("/"))
 
     async def crawl_site(
         self,
@@ -84,6 +88,9 @@ class SiteCrawler:
                 "crawl_depth_applied": str(crawl_depth),
             },
         )
+
+        for p in scraped_pages:
+            self.page_cache[p.url.rstrip("/")] = p
 
         return discovery_result, scraped_pages
 

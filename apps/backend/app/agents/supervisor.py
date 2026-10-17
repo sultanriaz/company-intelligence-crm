@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any, Dict, List, Optional
 from urllib.parse import urlparse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -71,6 +72,7 @@ class SupervisorAgent(BaseAgent):
                 step_index=step_index,
                 state_data=data_snapshot,
             )
+            await session.commit()
 
         try:
             # Step 1: VALIDATING
@@ -262,18 +264,26 @@ class SupervisorAgent(BaseAgent):
                 total_cost_usd=round(budget.accumulated_cost_usd, 4),
             )
 
-        except Exception as e:
+        except BaseException as e:
             error_message = f"{type(e).__name__}: {str(e)}"
             errors.append(error_message)
             logger.error(f"Workflow execution failed on run {run.id}: {error_message}")
-            await research_repo.update_run_status(run.id, WorkflowState.FAILED.value, error_message=error_message)
-            await CheckpointManager.save_checkpoint(
-                session=session,
-                run_id=run.id,
-                state=WorkflowState.FAILED.value,
-                step_index=step_index + 1,
-                state_data={"error": error_message},
-            )
+            try:
+                await research_repo.update_run_status(run.id, WorkflowState.FAILED.value, error_message=error_message)
+                await CheckpointManager.save_checkpoint(
+                    session=session,
+                    run_id=run.id,
+                    state=WorkflowState.FAILED.value,
+                    step_index=step_index + 1,
+                    state_data={"error": error_message},
+                )
+                await session.commit()
+            except Exception:
+                pass
+
+            if isinstance(e, (asyncio.CancelledError, KeyboardInterrupt)):
+                raise
+
             return WorkflowExecutionResult(
                 run_id=run.id,
                 status="FAILED",

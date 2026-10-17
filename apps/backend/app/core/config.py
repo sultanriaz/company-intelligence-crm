@@ -44,7 +44,7 @@ class Settings(BaseSettings):
 
     # Agent Limits
     AGENT_MAX_RETRIES: int = 3
-    AGENT_MAX_EXECUTION_SECONDS: int = 300
+    AGENT_MAX_EXECUTION_SECONDS: int = 600
     AGENT_MAX_COST_USD_PER_RUN: float = 2.00
 
     # AI / LLM Providers
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     LLM_MODEL: str = "mistral:latest"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "mistral:latest"
-    OLLAMA_TIMEOUT_SECONDS: float = 180.0
+    OLLAMA_TIMEOUT_SECONDS: float = 60.0
     OPENAI_API_KEY: Optional[str] = None
     ANTHROPIC_API_KEY: Optional[str] = None
 

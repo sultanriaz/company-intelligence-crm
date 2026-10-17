@@ -15,7 +15,11 @@ async_engine_args = {
     "echo": settings.DB_ECHO,
     "future": True,
 }
-if not is_sqlite:
+if is_sqlite:
+    async_engine_args.update({
+        "connect_args": {"timeout": 30.0, "check_same_thread": False},
+    })
+else:
     async_engine_args.update({
         "pool_size": 20,
         "max_overflow": 10,
@@ -23,6 +27,17 @@ if not is_sqlite:
     })
 
 async_engine = create_async_engine(settings.DATABASE_URL, **async_engine_args)
+
+if is_sqlite:
+    from sqlalchemy import event
+
+    @event.listens_for(async_engine.sync_engine, "connect")
+    def set_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
 
 AsyncSessionLocal = async_sessionmaker(
     bind=async_engine,
@@ -34,7 +49,11 @@ AsyncSessionLocal = async_sessionmaker(
 
 # Configure Sync Engine (for Alembic, synchronous Celery tasks, or migrations)
 sync_engine_args = {"echo": settings.DB_ECHO}
-if "sqlite" not in settings.SYNC_DATABASE_URL:
+if "sqlite" in settings.SYNC_DATABASE_URL:
+    sync_engine_args.update({
+        "connect_args": {"timeout": 30.0, "check_same_thread": False},
+    })
+else:
     sync_engine_args.update({
         "pool_size": 10,
         "max_overflow": 5,
@@ -42,6 +61,18 @@ if "sqlite" not in settings.SYNC_DATABASE_URL:
     })
 
 sync_engine = create_engine(settings.SYNC_DATABASE_URL, **sync_engine_args)
+
+if "sqlite" in settings.SYNC_DATABASE_URL:
+    from sqlalchemy import event
+
+    @event.listens_for(sync_engine, "connect")
+    def set_sync_sqlite_pragma(dbapi_connection, connection_record):
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.execute("PRAGMA busy_timeout=30000")
+        cursor.close()
+
 SyncSessionLocal = sessionmaker(
     bind=sync_engine,
     expire_on_commit=False,

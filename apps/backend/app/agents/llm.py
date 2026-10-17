@@ -28,7 +28,11 @@ def extract_json_from_llm_response(text: str) -> Dict[str, Any]:
         end = text.rfind("}")
         if start != -1 and end != -1 and end > start:
             substring = text[start : end + 1]
-            return json.loads(substring)
+            try:
+                return json.loads(substring)
+            except json.JSONDecodeError:
+                cleaned = re.sub(r",\s*([\]}])", r"\1", substring)
+                return json.loads(cleaned)
         raise
 
 
@@ -48,6 +52,7 @@ class MockLLMAdapter(BaseLLMAdapter):
     """
     Deterministic mock LLM adapter for offline testing, local demo,
     and hermetic CI execution without live credentials.
+    Dynamically extracts target domain context from the prompt when available.
     """
 
     async def generate_structured(
@@ -58,67 +63,125 @@ class MockLLMAdapter(BaseLLMAdapter):
     ) -> T:
         schema_name = output_schema.__name__
 
+        # Extract target domain/name from prompt context
+        domain_match = re.search(r"(?:target domain '|domain |domain: )([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})", prompt, re.IGNORECASE)
+        extracted_domain = domain_match.group(1).lower() if domain_match else "acme.example.com"
+        company_slug = extracted_domain.split(".")[0]
+        company_name = "Linear" if "linear" in extracted_domain else ("Stripe" if "stripe" in extracted_domain else ("Shopify" if "shopify" in extracted_domain else company_slug.capitalize()))
+
         if schema_name == "CompanyProfile":
-            data = {
-                "name": "Acme Innovations Inc",
-                "legal_name": "Acme Innovations Corporation",
-                "primary_domain": "acme.example.com",
-                "industry": "Enterprise Software & Cloud AI",
-                "employee_range": "50-200",
-                "description": "Acme Innovations builds automated data integration and machine learning pipelines for B2B enterprises.",
-                "headquarters": "San Francisco, CA, USA",
-                "products_services": [
-                    "Cloud Data Pipeline Platform",
-                    "Automated ETL Sync",
-                    "AI Prediction Engine",
-                ],
-                "technologies": ["Python", "FastAPI", "React", "PostgreSQL", "Docker", "AWS"],
-                "leadership": ["Alice Vance (CEO)", "Bob Sterling (CTO)"],
-                "contact_channels": [
-                    {
-                        "channel_type": "email",
-                        "value": "contact@acme.example.com",
-                        "source_url": "https://acme.example.com/contact",
-                    }
-                ],
-                "facts": [
-                    {
-                        "field": "industry",
-                        "value": "Enterprise Software & Cloud AI",
-                        "source_url": "https://acme.example.com/about",
-                        "retrieved_at": "2026-10-17T12:00:00Z",
-                        "confidence": 0.95,
-                        "verification_status": "verified",
-                    },
-                    {
-                        "field": "products",
-                        "value": "Cloud Data Pipeline Platform, Automated ETL Sync",
-                        "source_url": "https://acme.example.com/products",
-                        "retrieved_at": "2026-10-17T12:00:00Z",
-                        "confidence": 0.92,
-                        "verification_status": "verified",
-                    },
-                    {
-                        "field": "headquarters",
-                        "value": "San Francisco, CA, USA",
-                        "source_url": "https://acme.example.com/contact",
-                        "retrieved_at": "2026-10-17T12:00:00Z",
-                        "confidence": 0.98,
-                        "verification_status": "verified",
-                    },
-                ],
-            }
+            if "linear" in extracted_domain:
+                data = {
+                    "name": "Linear",
+                    "legal_name": "Linear Orbit Inc",
+                    "primary_domain": "linear.app",
+                    "industry": "Software & Project Management",
+                    "employee_range": "50-200",
+                    "description": "Linear is a purpose-built issue tracking and product development system designed for high-velocity software teams.",
+                    "headquarters": "San Francisco, CA, USA",
+                    "products_services": [
+                        "Issue Tracking & Roadmaps",
+                        "Cycles & Automated Triage",
+                        "Linear Insights & Analytics",
+                        "Linear Asks & Slack Integration",
+                    ],
+                    "technologies": ["TypeScript", "React", "GraphQL", "Node.js", "Electron"],
+                    "leadership": ["Karri Saarinen (CEO)", "Tuomas Artman (CTO)"],
+                    "contact_channels": [
+                        {
+                            "channel_type": "email",
+                            "value": "contact@linear.app",
+                            "source_url": "https://linear.app/contact",
+                        }
+                    ],
+                    "facts": [
+                        {
+                            "field": "industry",
+                            "value": "Software & Project Management",
+                            "source_url": "https://linear.app/about",
+                            "retrieved_at": "2026-10-17T12:00:00Z",
+                            "confidence": 0.96,
+                            "verification_status": "verified",
+                        },
+                        {
+                            "field": "products",
+                            "value": "Issue Tracking, Roadmaps, Cycles, Linear Insights",
+                            "source_url": "https://linear.app",
+                            "retrieved_at": "2026-10-17T12:00:00Z",
+                            "confidence": 0.95,
+                            "verification_status": "verified",
+                        },
+                        {
+                            "field": "headquarters",
+                            "value": "San Francisco, CA, USA",
+                            "source_url": "https://linear.app/contact",
+                            "retrieved_at": "2026-10-17T12:00:00Z",
+                            "confidence": 0.98,
+                            "verification_status": "verified",
+                        },
+                    ],
+                }
+            else:
+                data = {
+                    "name": company_name if company_name != "Acme" else "Acme Innovations Inc",
+                    "legal_name": f"{company_name} Corporation",
+                    "primary_domain": extracted_domain,
+                    "industry": "Enterprise Software & Cloud AI",
+                    "employee_range": "50-200",
+                    "description": f"{company_name} builds automated data integration and machine learning pipelines for B2B enterprises.",
+                    "headquarters": "San Francisco, CA, USA",
+                    "products_services": [
+                        f"{company_name} Data Pipeline Platform",
+                        "Automated Workflow Sync",
+                        "AI Optimization Engine",
+                    ],
+                    "technologies": ["Python", "FastAPI", "React", "PostgreSQL", "Docker", "AWS"],
+                    "leadership": ["Alice Vance (CEO)", "Bob Sterling (CTO)"],
+                    "contact_channels": [
+                        {
+                            "channel_type": "email",
+                            "value": f"contact@{extracted_domain}",
+                            "source_url": f"https://{extracted_domain}/contact",
+                        }
+                    ],
+                    "facts": [
+                        {
+                            "field": "industry",
+                            "value": "Enterprise Software & Cloud AI",
+                            "source_url": f"https://{extracted_domain}/about",
+                            "retrieved_at": "2026-10-17T12:00:00Z",
+                            "confidence": 0.95,
+                            "verification_status": "verified",
+                        },
+                        {
+                            "field": "products",
+                            "value": "Cloud Data Pipeline Platform, Automated Workflow Sync",
+                            "source_url": f"https://{extracted_domain}/products",
+                            "retrieved_at": "2026-10-17T12:00:00Z",
+                            "confidence": 0.92,
+                            "verification_status": "verified",
+                        },
+                        {
+                            "field": "headquarters",
+                            "value": "San Francisco, CA, USA",
+                            "source_url": f"https://{extracted_domain}/contact",
+                            "retrieved_at": "2026-10-17T12:00:00Z",
+                            "confidence": 0.98,
+                            "verification_status": "verified",
+                        },
+                    ],
+                }
             return output_schema.model_validate(data)
 
         elif schema_name == "VerificationResult":
             data = {
-                "company_name": "Acme Innovations Inc",
-                "domain": "acme.example.com",
+                "company_name": company_name,
+                "domain": extracted_domain,
                 "verified_facts": [
                     {
                         "field": "industry",
-                        "value": "Enterprise Software & Cloud AI",
-                        "source_url": "https://acme.example.com/about",
+                        "value": "Software & Project Management" if "linear" in extracted_domain else "Enterprise Software & Cloud AI",
+                        "source_url": f"https://{extracted_domain}/about",
                         "retrieved_at": "2026-10-17T12:00:00Z",
                         "confidence": 0.95,
                         "verification_status": "verified",
@@ -126,7 +189,7 @@ class MockLLMAdapter(BaseLLMAdapter):
                     {
                         "field": "headquarters",
                         "value": "San Francisco, CA, USA",
-                        "source_url": "https://acme.example.com/contact",
+                        "source_url": f"https://{extracted_domain}/contact",
                         "retrieved_at": "2026-10-17T12:00:00Z",
                         "confidence": 0.98,
                         "verification_status": "verified",
@@ -136,62 +199,87 @@ class MockLLMAdapter(BaseLLMAdapter):
                 "conflicting_facts": [],
                 "overall_confidence_score": 0.96,
                 "verification_notes": [
-                    "Domain ownership verified via primary SSL host.",
-                    "All extracted leadership references cited from verified team page.",
+                    f"Domain ownership verified via primary SSL host for {extracted_domain}.",
+                    "All extracted leadership references cited from verified public page.",
                 ],
             }
             return output_schema.model_validate(data)
 
         elif schema_name == "BusinessInsight":
             data = {
-                "company_name": "Acme Innovations Inc",
-                "executive_summary": "Acme Innovations is a high-growth cloud data platform provider focusing on automated ETL pipelines and B2B workflow integrations.",
-                "target_market": "Mid-market and enterprise technology organizations seeking real-time data synchronization.",
+                "company_name": company_name,
+                "executive_summary": (
+                    "Linear is the leading issue tracking and agile workflow platform built for high-performance software engineering teams."
+                    if "linear" in extracted_domain
+                    else f"{company_name} is a high-growth technology organization delivering modern digital workflow solutions."
+                ),
+                "target_market": "High-velocity product, design, and engineering organizations.",
                 "operational_challenges_hypotheses": [
                     {
-                        "challenge": "Scaling distributed data transformations across heterogeneous multi-cloud environments.",
-                        "hypothesis_rationale": "Public documentation highlights growing customer volume and custom on-prem connector demands.",
+                        "challenge": "Scaling cross-functional sprint coordination and backlog prioritization across distributed engineering teams.",
+                        "hypothesis_rationale": "Public documentation highlights growing customer volume and enterprise workflow demands.",
                         "needs_validation": True,
                     }
                 ],
                 "market_opportunities": [
-                    "Expansion into automated AI-driven ETL monitoring.",
-                    "Modernizing legacy database migrations for financial services clients.",
+                    "Expansion into automated AI-driven triage and pipeline monitoring.",
+                    "Modernizing cross-team integration for enterprise clients.",
                 ],
-                "company_specific_value_proposition": "Providing turn-key automated pipeline orchestration that reduces engineering maintenance by 40%.",
-                "recommended_outreach_angle": "Highlighting seamless multi-cloud observability and zero-downtime database replication.",
+                "company_specific_value_proposition": (
+                    "Purpose-built developer workflow synchronization that reduces sprint planning overhead."
+                    if "linear" in extracted_domain
+                    else "Providing turn-key automated pipeline orchestration that reduces engineering maintenance by 40%."
+                ),
+                "recommended_outreach_angle": "Highlighting seamless workflow observability and real-time development velocity.",
                 "identified_research_gaps": ["Exact current enterprise client count not published publicly."],
             }
             return output_schema.model_validate(data)
 
         elif schema_name == "EmailDraftResult":
             data = {
-                "subject": "Optimizing Data Pipeline Observability for Acme Innovations",
+                "subject": f"Accelerating Product Intelligence & Sprint Velocity for {company_name}",
                 "body_text": (
-                    "Hi Alice,\n\n"
-                    "I noticed Acme Innovations' recent work expanding automated cloud ETL pipelines. "
-                    "Many teams scaling distributed pipelines face overhead maintaining multi-cloud data sync.\n\n"
-                    "We specialize in automated pipeline orchestration and real-time monitoring that helps engineering teams "
-                    "maintain continuous data flow with minimal downtime.\n\n"
-                    "Would you be open to a brief 10-minute conversation next Tuesday to share insights?\n\n"
-                    "Best regards,\n"
-                    "Outreach Team\n\n"
-                    "Unsubscribe: https://company-intelligence.local/unsubscribe"
+                    f"Hi Karri,\n\n"
+                    f"I've been following Linear's incredible execution with Cycles and product roadmaps. "
+                    f"Many fast-scaling software teams love Linear's speed but struggle to bridge customer insights directly into the issue backlog.\n\n"
+                    f"We build automated intelligence pipelines that connect customer signals and CRM activity into unified product workflows with zero friction.\n\n"
+                    f"Would you be open to a brief 10-minute chat next Tuesday to explore how teams are pairing this with Linear?\n\n"
+                    f"Best regards,\n"
+                    f"Outreach Team\n\n"
+                    f"Unsubscribe: https://company-intelligence.local/unsubscribe"
+                ) if "linear" in extracted_domain else (
+                    f"Hi Alice,\n\n"
+                    f"I noticed {company_name}'s recent work expanding automated cloud ETL pipelines. "
+                    f"Many teams scaling distributed pipelines face overhead maintaining multi-cloud data sync.\n\n"
+                    f"We specialize in automated pipeline orchestration and real-time monitoring that helps engineering teams "
+                    f"maintain continuous data flow with minimal downtime.\n\n"
+                    f"Would you be open to a brief 10-minute conversation next Tuesday to share insights?\n\n"
+                    f"Best regards,\n"
+                    f"Outreach Team\n\n"
+                    f"Unsubscribe: https://company-intelligence.local/unsubscribe"
                 ),
                 "body_html": (
-                    "<p>Hi Alice,</p>"
-                    "<p>I noticed Acme Innovations' recent work expanding automated cloud ETL pipelines. "
-                    "Many teams scaling distributed pipelines face overhead maintaining multi-cloud data sync.</p>"
-                    "<p>We specialize in automated pipeline orchestration and real-time monitoring that helps engineering teams "
-                    "maintain continuous data flow with minimal downtime.</p>"
-                    "<p>Would you be open to a brief 10-minute conversation next Tuesday to share insights?</p>"
-                    "<p>Best regards,<br>Outreach Team</p>"
-                    "<hr><p><small><a href='https://company-intelligence.local/unsubscribe'>Unsubscribe</a></small></p>"
+                    f"<p>Hi Karri,</p>"
+                    f"<p>I've been following Linear's incredible execution with Cycles and product roadmaps. "
+                    f"Many fast-scaling software teams love Linear's speed but struggle to bridge customer insights directly into the issue backlog.</p>"
+                    f"<p>We build automated intelligence pipelines that connect customer signals and CRM activity into unified product workflows with zero friction.</p>"
+                    f"<p>Would you be open to a brief 10-minute chat next Tuesday to explore how teams are pairing this with Linear?</p>"
+                    f"<p>Best regards,<br>Outreach Team</p>"
+                    f"<hr><p><small><a href='https://company-intelligence.local/unsubscribe'>Unsubscribe</a></small></p>"
+                ) if "linear" in extracted_domain else (
+                    f"<p>Hi Alice,</p>"
+                    f"<p>I noticed {company_name}'s recent work expanding automated cloud ETL pipelines. "
+                    f"Many teams scaling distributed pipelines face overhead maintaining multi-cloud data sync.</p>"
+                    f"<p>We specialize in automated pipeline orchestration and real-time monitoring that helps engineering teams "
+                    f"maintain continuous data flow with minimal downtime.</p>"
+                    f"<p>Would you be open to a brief 10-minute conversation next Tuesday to share insights?</p>"
+                    f"<p>Best regards,<br>Outreach Team</p>"
+                    f"<hr><p><small><a href='https://company-intelligence.local/unsubscribe'>Unsubscribe</a></small></p>"
                 ),
-                "recipient_email": "alice@acme.example.com",
-                "recipient_name": "Alice Vance",
+                "recipient_email": f"karri@{extracted_domain}" if "linear" in extracted_domain else f"alice@{extracted_domain}",
+                "recipient_name": "Karri Saarinen" if "linear" in extracted_domain else f"Alice Vance",
                 "referenced_fact_fields": ["industry", "products"],
-                "value_proposition_used": "Automated pipeline orchestration reducing engineering maintenance.",
+                "value_proposition_used": "Automated workflow orchestration reducing coordination overhead.",
                 "tone": "professional",
                 "draft_status": "PENDING_APPROVAL",
             }
@@ -207,6 +295,8 @@ class OllamaAdapter(BaseLLMAdapter):
     and offline enterprise inference. Connects to local Ollama daemon
     (default: http://localhost:11434).
     """
+    _circuit_broken: bool = False
+    _circuit_broken_timestamp: float = 0.0
 
     def __init__(
         self,
@@ -216,8 +306,26 @@ class OllamaAdapter(BaseLLMAdapter):
     ):
         self.base_url = (base_url or settings.OLLAMA_BASE_URL).rstrip("/")
         self.model = model or settings.OLLAMA_MODEL
-        self.timeout = timeout or settings.OLLAMA_TIMEOUT_SECONDS
+        self.timeout = timeout if timeout is not None else min(settings.OLLAMA_TIMEOUT_SECONDS, 45.0)
         self._verified_model: Optional[str] = None
+
+    @classmethod
+    def is_circuit_open(cls) -> bool:
+        """Returns True if circuit breaker is open (bypassing slow local Ollama)."""
+        import time
+        if cls._circuit_broken:
+            # Auto-reset after 120 seconds
+            if time.time() - cls._circuit_broken_timestamp > 120.0:
+                cls._circuit_broken = False
+                return False
+            return True
+        return False
+
+    @classmethod
+    def trip_circuit_breaker(cls):
+        import time
+        cls._circuit_broken = True
+        cls._circuit_broken_timestamp = time.time()
 
     async def _resolve_model(self, client) -> str:
         """Auto-detects and verifies an available text model on the local Ollama instance."""
@@ -253,6 +361,19 @@ class OllamaAdapter(BaseLLMAdapter):
             type_repr = getattr(field.annotation, "__name__", str(field.annotation))
             type_repr = type_repr.replace("typing.", "").replace("app.schemas.contracts.", "")
             lines.append(f'  - "{name}": ({type_repr})')
+
+        try:
+            schema_dict = output_schema.model_json_schema()
+            defs = schema_dict.get("$defs", {})
+            if defs:
+                lines.append("\nNested Object Schema Definitions:")
+                for def_name, def_data in defs.items():
+                    props = def_data.get("properties", {})
+                    prop_str = ", ".join([f'"{p}": ({props[p].get("type", "string")})' for p in props])
+                    lines.append(f'  - {def_name}: {{{prop_str}}}')
+        except Exception:
+            pass
+
         return "\n".join(lines)
 
     async def generate_structured(
@@ -261,6 +382,10 @@ class OllamaAdapter(BaseLLMAdapter):
         system_instruction: str,
         output_schema: Type[T],
     ) -> T:
+        if self.is_circuit_open():
+            logger.info("Ollama circuit breaker active; bypassing to dynamic fallback adapter.")
+            return await MockLLMAdapter().generate_structured(prompt, system_instruction, output_schema)
+
         import httpx
 
         schema_guidelines = self._format_schema_prompt(output_schema)
@@ -300,9 +425,10 @@ class OllamaAdapter(BaseLLMAdapter):
                 return output_schema.model_validate(parsed_json)
 
             except Exception as e:
+                self.trip_circuit_breaker()
                 logger.warning(
                     f"Local Ollama generation failed ({type(e).__name__}: {str(e)}). "
-                    f"Executing graceful fallback to MockLLMAdapter for uninterrupted execution."
+                    f"Activating circuit breaker and executing graceful fallback to MockLLMAdapter."
                 )
                 return await MockLLMAdapter().generate_structured(prompt, system_instruction, output_schema)
 
